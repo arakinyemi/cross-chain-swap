@@ -1,0 +1,48 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Go build artifacts
+bin/
+dist/
+build/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Coverage and profiling
+coverage.out
+coverage.html
+*.coverprofile
+*.prof
+
+# Logs
+*.log
+logs/
+
+# Local database/files
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.swp
+*.swo
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Codex/agent local state
+.agents/
+.codex/

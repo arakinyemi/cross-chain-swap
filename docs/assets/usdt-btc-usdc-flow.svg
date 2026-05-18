@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="880" viewBox="0 0 1280 880" role="img" aria-labelledby="title desc">
+  <title id="title">USDT to BTC to USDC Swap Flow</title>
+  <desc id="desc">Sequence diagram showing an app backend accepting USDT, trading through BTC, and withdrawing USDC to a destination wallet using Bitnob.</desc>
+  <defs>
+    <pattern id="dot-grid" x="0" y="0" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="3" r="2" fill="#dce8d4"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#26312b"/>
+    </marker>
+    <style>
+      .frame { fill: #fbfdf9; stroke: #d7ead2; stroke-width: 2; }
+      .grid { fill: url(#dot-grid); opacity: 0.85; }
+      .actor { fill: #cce58d; stroke: #a9cf62; stroke-width: 2; rx: 4; }
+      .actor-text { font: 700 18px Arial, sans-serif; fill: #223126; text-anchor: middle; dominant-baseline: middle; }
+      .line { stroke: #b7d877; stroke-width: 3; }
+      .arrow { stroke: #26312b; stroke-width: 2.2; marker-end: url(#arrow); fill: none; }
+      .dash { stroke: #6d756f; stroke-width: 2.2; stroke-dasharray: 7 7; marker-end: url(#arrow); fill: none; }
+      .label { font: 600 17px Arial, sans-serif; fill: #26312b; text-anchor: middle; }
+      .small { font: 600 15px Arial, sans-serif; fill: #3b463f; text-anchor: middle; }
+    </style>
+  </defs>
+
+  <rect x="18" y="18" width="1244" height="844" rx="34" class="frame"/>
+  <rect x="40" y="42" width="1200" height="800" rx="22" class="grid"/>
+
+  <g id="actors-top">
+    <rect x="70" y="78" width="150" height="64" class="actor"/>
+    <text x="145" y="111" class="actor-text">App</text>
+
+    <rect x="320" y="78" width="150" height="64" class="actor"/>
+    <text x="395" y="111" class="actor-text">Backend</text>
+
+    <rect x="570" y="78" width="170" height="64" class="actor"/>
+    <text x="655" y="111" class="actor-text">Bitnob API</text>
+
+    <rect x="835" y="78" width="170" height="64" class="actor"/>
+    <text x="920" y="111" class="actor-text">User Wallet</text>
+
+    <rect x="1070" y="78" width="150" height="64" class="actor"/>
+    <text x="1145" y="103" class="actor-text">USDC</text>
+    <text x="1145" y="125" class="actor-text">Wallet</text>
+  </g>
+
+  <line x1="145" y1="142" x2="145" y2="780" class="line"/>
+  <line x1="395" y1="142" x2="395" y2="780" class="line"/>
+  <line x1="655" y1="142" x2="655" y2="780" class="line"/>
+  <line x1="920" y1="142" x2="920" y2="780" class="line"/>
+  <line x1="1145" y1="142" x2="1145" y2="780" class="line"/>
+
+  <path d="M145 188 H395" class="arrow"/>
+  <text x="270" y="176" class="label">Create swap: USDT to USDC</text>
+
+  <path d="M395 236 H655" class="arrow"/>
+  <text x="525" y="224" class="label">Validate destination address</text>
+
+  <path d="M655 284 H395" class="dash"/>
+  <text x="525" y="272" class="label">Address valid</text>
+
+  <path d="M395 332 H655" class="arrow"/>
+  <text x="525" y="320" class="label">Generate USDT deposit address</text>
+
+  <path d="M655 380 H395" class="dash"/>
+  <text x="525" y="368" class="label">Return deposit address</text>
+
+  <path d="M395 428 H145" class="dash"/>
+  <text x="270" y="416" class="label">Display address and amount</text>
+
+  <path d="M145 476 H920" class="arrow"/>
+  <text x="532" y="464" class="label">User sends USDT to deposit address</text>
+
+  <path d="M920 524 H655" class="arrow"/>
+  <text x="790" y="512" class="label">USDT deposit arrives</text>
+
+  <path d="M655 572 H395" class="dash"/>
+  <text x="525" y="560" class="label">Webhook: deposit confirmed</text>
+
+  <path d="M395 620 H655" class="arrow"/>
+  <text x="525" y="608" class="label">Quote/order: USDT to BTC</text>
+
+  <path d="M395 668 H655" class="arrow"/>
+  <text x="525" y="656" class="label">Quote/order: BTC to USDC</text>
+
+  <path d="M655 716 H1145" class="arrow"/>
+  <text x="900" y="704" class="label">Withdraw USDC to destination wallet</text>
+
+  <path d="M655 752 H395" class="dash"/>
+  <text x="525" y="740" class="small">Webhook: transfer.success marks swap completed</text>
+
+  <g id="actors-bottom">
+    <rect x="70" y="780" width="150" height="64" class="actor"/>
+    <text x="145" y="813" class="actor-text">App</text>
+
+    <rect x="320" y="780" width="150" height="64" class="actor"/>
+    <text x="395" y="813" class="actor-text">Backend</text>
+
+    <rect x="570" y="780" width="170" height="64" class="actor"/>
+    <text x="655" y="813" class="actor-text">Bitnob API</text>
+
+    <rect x="835" y="780" width="170" height="64" class="actor"/>
+    <text x="920" y="813" class="actor-text">User Wallet</text>
+
+    <rect x="1070" y="780" width="150" height="64" class="actor"/>
+    <text x="1145" y="805" class="actor-text">USDC</text>
+    <text x="1145" y="827" class="actor-text">Wallet</text>
+  </g>
+</svg>
