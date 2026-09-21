@@ -24,54 +24,76 @@ type Store interface {
 	SetWithdrawalTxID(id, txID string) error
 }
 
+// Exchange is the venue the service trades on. *bitnob.Client is the real
+// implementation; the demo mode substitutes a stub so the interface runs with
+// no credentials.
+type Exchange interface {
+	GetPrices() ([]bitnob.PriceItem, error)
+	ValidateAddress(address, chain string) (bool, error)
+	GenerateAddress(chain, label, reference string) (*bitnob.Address, error)
+	CreateQuote(req bitnob.QuoteRequest) (*bitnob.Quote, error)
+	CreateOrder(req bitnob.OrderRequest) (*bitnob.Order, error)
+	GetOrder(id string) (*bitnob.Order, error)
+	Withdraw(req bitnob.WithdrawalRequest) (*bitnob.Withdrawal, error)
+}
+
 type Service struct {
-	bitnob *bitnob.Client
+	bitnob Exchange
 	store  Store
 	cfg    *config.Config
 }
 
-var supportedChains = map[string]struct{}{
-	"ethereum": {},
-	"bsc":      {},
-	"polygon":  {},
-	"tron":     {},
-	"solana":   {},
-	"stellar":  {},
-	"arbitrum": {},
+func NewService(exchange Exchange, store Store, cfg *config.Config) *Service {
+	return &Service{bitnob: exchange, store: store, cfg: cfg}
 }
 
-var supportedAssets = map[string]struct{}{
-	"USDT": {},
-	"USDC": {},
-	"BTC":  {},
-}
+// Quote estimates a swap without touching Bitnob's address or order APIs, so
+// the interface can price a pair while the user is still typing.
+func (s *Service) Quote(fromChain, toChain, fromAsset, toAsset string, amountIn float64) (*Estimate, error) {
+	req, err := normalize(fromChain, toChain, fromAsset, toAsset, amountIn, s.cfg.MinSwapAmount)
+	if err != nil {
+		return nil, err
+	}
 
-func NewService(bitnobClient *bitnob.Client, store Store, cfg *config.Config) *Service {
-	return &Service{bitnob: bitnobClient, store: store, cfg: cfg}
+	amountAfterFee := req.AmountIn - s.cfg.SwapFeeUSDT
+	if amountAfterFee <= 0 {
+		return nil, errors.New("amount must be greater than the swap fee")
+	}
+
+	prices, err := s.bitnob.GetPrices()
+	if err != nil {
+		return nil, fmt.Errorf("fetch prices: %w", err)
+	}
+
+	amountOut := s.estimateAmountOut(prices, req.FromAsset, req.ToAsset, amountAfterFee)
+	rate := 0.0
+	if req.AmountIn > 0 {
+		rate = amountOut / req.AmountIn
+	}
+
+	return &Estimate{
+		FromChain: req.FromChain,
+		ToChain:   req.ToChain,
+		FromAsset: req.FromAsset,
+		ToAsset:   req.ToAsset,
+		AmountIn:  req.AmountIn,
+		AmountOut: amountOut,
+		Fee:       s.cfg.SwapFeeUSDT,
+		Rate:      rate,
+		MinAmount: s.cfg.MinSwapAmount,
+	}, nil
 }
 
 func (s *Service) CreateSwap(fromChain, toChain, fromAsset, toAsset, destAddress string, amountIn float64) (*Swap, error) {
-	fromChain = strings.ToLower(strings.TrimSpace(fromChain))
-	toChain = strings.ToLower(strings.TrimSpace(toChain))
-	fromAsset = strings.ToUpper(strings.TrimSpace(fromAsset))
-	toAsset = strings.ToUpper(strings.TrimSpace(toAsset))
-	destAddress = strings.TrimSpace(destAddress)
+	req, err := normalize(fromChain, toChain, fromAsset, toAsset, amountIn, s.cfg.MinSwapAmount)
+	if err != nil {
+		return nil, err
+	}
 
-	if amountIn < s.cfg.MinSwapAmount {
-		return nil, fmt.Errorf("minimum swap amount is %.2f", s.cfg.MinSwapAmount)
-	}
-	if _, ok := supportedChains[fromChain]; !ok {
-		return nil, fmt.Errorf("unsupported source chain: %s", fromChain)
-	}
-	if _, ok := supportedChains[toChain]; !ok {
-		return nil, fmt.Errorf("unsupported destination chain: %s", toChain)
-	}
-	if _, ok := supportedAssets[fromAsset]; !ok {
-		return nil, fmt.Errorf("unsupported source asset: %s", fromAsset)
-	}
-	if _, ok := supportedAssets[toAsset]; !ok {
-		return nil, fmt.Errorf("unsupported destination asset: %s", toAsset)
-	}
+	fromChain, toChain = req.FromChain, req.ToChain
+	fromAsset, toAsset = req.FromAsset, req.ToAsset
+	amountIn = req.AmountIn
+	destAddress = strings.TrimSpace(destAddress)
 	if destAddress == "" {
 		return nil, errors.New("destination address is required")
 	}
@@ -410,4 +432,35 @@ func amountToUnits(amount float64, asset string) string {
 func looksExpired(err error) bool {
 	message := strings.ToLower(err.Error())
 	return strings.Contains(message, "expired") || strings.Contains(message, "quote")
+}
+
+// normalize trims and validates a swap request against the asset catalog. Both
+// the quote and the create path go through it so an estimate can never be
+// priced on a pair that create would reject.
+func normalize(fromChain, toChain, fromAsset, toAsset string, amountIn, minAmount float64) (*Estimate, error) {
+	fromChain = strings.ToLower(strings.TrimSpace(fromChain))
+	toChain = strings.ToLower(strings.TrimSpace(toChain))
+	fromAsset = strings.ToUpper(strings.TrimSpace(fromAsset))
+	toAsset = strings.ToUpper(strings.TrimSpace(toAsset))
+
+	if amountIn < minAmount {
+		return nil, fmt.Errorf("minimum swap amount is %.2f", minAmount)
+	}
+	if !supports(fromAsset, fromChain) {
+		return nil, fmt.Errorf("%s is not supported on %s", fromAsset, fromChain)
+	}
+	if !supports(toAsset, toChain) {
+		return nil, fmt.Errorf("%s is not supported on %s", toAsset, toChain)
+	}
+	if fromChain == toChain && fromAsset == toAsset {
+		return nil, errors.New("source and destination are the same")
+	}
+
+	return &Estimate{
+		FromChain: fromChain,
+		ToChain:   toChain,
+		FromAsset: fromAsset,
+		ToAsset:   toAsset,
+		AmountIn:  amountIn,
+	}, nil
 }

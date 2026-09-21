@@ -5,12 +5,16 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"crosschain/internal/bitnob"
 	"crosschain/internal/config"
 	"crosschain/internal/db"
+	"crosschain/internal/demo"
 	"crosschain/internal/swap"
+	"crosschain/internal/ui"
 	"crosschain/internal/webhook"
 
 	"github.com/go-chi/chi/v5"
@@ -23,30 +27,53 @@ func main() {
 	}
 
 	cfg := config.Load()
-	if cfg.BitnobClientID == "" || cfg.BitnobClientSecret == "" || cfg.DatabaseURL == "" {
-		log.Fatal("BITNOB_CLIENT_ID, BITNOB_CLIENT_SECRET, and DATABASE_URL are required")
+
+	var (
+		store    swapStore
+		exchange swap.Exchange
+	)
+
+	if demoMode() {
+		log.Print("DEMO=1: running with a stub exchange and in-memory orders — no real funds move")
+		demoStore := demo.NewStore()
+		store, exchange = demoStore, &demo.Exchange{}
+		defer store.Close()
+	} else {
+		if cfg.BitnobClientID == "" || cfg.BitnobClientSecret == "" || cfg.DatabaseURL == "" {
+			log.Fatal("BITNOB_CLIENT_ID, BITNOB_CLIENT_SECRET, and DATABASE_URL are required (or set DEMO=1 to run the interface without them)")
+		}
+
+		postgres, err := db.NewPostgresStore(cfg.DatabaseURL)
+		if err != nil {
+			log.Fatalf("connect database: %v", err)
+		}
+		defer postgres.Close()
+
+		bitnobClient := bitnob.NewClient(cfg.BitnobClientID, cfg.BitnobClientSecret, cfg.BitnobBaseURL)
+		if err := bitnobClient.Whoami(); err != nil {
+			log.Fatalf("verify bitnob credentials: %v", err)
+		}
+		store, exchange = postgres, bitnobClient
 	}
 
-	store, err := db.NewPostgresStore(cfg.DatabaseURL)
-	if err != nil {
-		log.Fatalf("connect database: %v", err)
+	swapService := swap.NewService(exchange, store, cfg)
+	if demoStore, ok := store.(*demo.Store); ok {
+		demo.Drive(demoStore, swapService, 12*time.Second)
 	}
-	defer store.Close()
-
-	bitnobClient := bitnob.NewClient(cfg.BitnobClientID, cfg.BitnobClientSecret, cfg.BitnobBaseURL)
-	if err := bitnobClient.Whoami(); err != nil {
-		log.Fatalf("verify bitnob credentials: %v", err)
-	}
-
-	swapService := swap.NewService(bitnobClient, store, cfg)
 	webhookHandler := webhook.NewHandler(swapService, store, cfg.BitnobWebhookSecret)
 
 	r := chi.NewRouter()
 	r.Use(cors)
 	r.Post("/swap", createSwapHandler(swapService))
 	r.Get("/swap/{id}", getSwapHandler(store))
-	r.Get("/prices", pricesHandler(bitnobClient))
+	r.Get("/prices", pricesHandler(exchange))
+	r.Get("/assets", assetsHandler(cfg))
+	r.Post("/quote", quoteHandler(swapService))
 	r.Post("/webhooks/bitnob", webhookHandler.Handle)
+
+	// The interface itself, plus the QR codes its order page renders.
+	r.Get("/qr", ui.QRHandler())
+	r.Handle("/*", ui.Handler())
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -54,10 +81,23 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	log.Printf("server listening on :%s", cfg.Port)
+	log.Printf("swap interface listening on http://localhost:%s", cfg.Port)
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("server error: %v", err)
 	}
+}
+
+// swapStore is the persistence the server runs against: Postgres normally, an
+// in-memory store in demo mode.
+type swapStore interface {
+	swap.Store
+	Close() error
+}
+
+func demoMode() bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("DEMO")))
+
+	return value == "1" || value == "true" || value == "yes"
 }
 
 func createSwapHandler(svc *swap.Service) http.HandlerFunc {
@@ -125,7 +165,41 @@ func getSwapHandler(store swap.Store) http.HandlerFunc {
 	}
 }
 
-func pricesHandler(client *bitnob.Client) http.HandlerFunc {
+func assetsHandler(cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"assets":     swap.Catalog(),
+			"min_amount": cfg.MinSwapAmount,
+			"fee":        cfg.SwapFeeUSDT,
+		})
+	}
+}
+
+func quoteHandler(svc *swap.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			FromChain string  `json:"from_chain"`
+			ToChain   string  `json:"to_chain"`
+			FromAsset string  `json:"from_asset"`
+			ToAsset   string  `json:"to_asset"`
+			Amount    float64 `json:"amount"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+
+		estimate, err := svc.Quote(req.FromChain, req.ToChain, req.FromAsset, req.ToAsset, req.Amount)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, estimate)
+	}
+}
+
+func pricesHandler(client swap.Exchange) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		prices, err := client.GetPrices()
 		if err != nil {

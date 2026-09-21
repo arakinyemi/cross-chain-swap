@@ -34,3 +34,16 @@ type Swap struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
+
+// Estimate is a priced swap the user has not committed to yet.
+type Estimate struct {
+	FromChain string  `json:"from_chain"`
+	ToChain   string  `json:"to_chain"`
+	FromAsset string  `json:"from_asset"`
+	ToAsset   string  `json:"to_asset"`
+	AmountIn  float64 `json:"amount_in"`
+	AmountOut float64 `json:"amount_out"`
+	Fee       float64 `json:"fee"`
+	Rate      float64 `json:"rate"`
+	MinAmount float64 `json:"min_amount"`
+}

@@ -46,3 +46,17 @@ Thumbs.db
 # Codex/agent local state
 .agents/
 .codex/
+.gstack/
+
+# Frontend
+web/node_modules/
+web/dist/
+.vite/
+
+# Built interface bundle, embedded by internal/ui at go build time.
+# The directory itself is tracked (via .gitkeep) so `go build` works on a fresh
+# clone; the generic dist/ rule above would otherwise swallow it, and git cannot
+# re-include a file whose parent directory is excluded.
+!internal/ui/dist/
+internal/ui/dist/*
+!internal/ui/dist/.gitkeep

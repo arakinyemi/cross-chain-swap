@@ -1,6 +1,8 @@
 # Tutorial: Accept USDT and Settle as USDC Through BTC
 
-This guide shows how the `cross-chain-swap` backend accepts USDT from a user, routes the value through BTC, and settles the final amount as USDC to the user's destination wallet using Bitnob APIs.
+This guide shows how the exchange engine behind the swap interface accepts USDT from a user, routes the value through BTC, and settles the final amount as USDC to the user's destination wallet using Bitnob APIs.
+
+This is the machinery under `/` and `/order/{id}` — see the README for the interface itself, and run `DEMO=1 go run ./cmd/server` to click through the flow described here without credentials.
 
 The flow is designed for a cross-chain stablecoin swap product where a user starts with USDT on one supported chain and wants to receive USDC on another supported chain.
 
